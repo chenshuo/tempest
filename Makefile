@@ -1,5 +1,6 @@
 CXXFLAGS=-O0 -ggdb
 CXXFLAGS+=-Wall -Wextra
+CXXFLAGS+=-lreadline
 HEADERS=$(wildcard *.h)
 BINARY=tempest
 

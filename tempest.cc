@@ -9,8 +9,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-//#include <readline/readline.h>
-//#include <readline/history.h>
+#include <readline/readline.h>
+#include <readline/history.h>
 
 #include <iterator>
 #include <sstream>
@@ -19,6 +19,8 @@
 
 using namespace std;
 const bool DEBUG = false;
+const char* g_host;
+uint16_t g_port;
 
 void fatal(const char* msg) __attribute__ ((noreturn));
 void fatal(const char* msg)
@@ -32,32 +34,26 @@ int acceptOne(uint16_t port)
   return -1;
 }
 
-int connectHost(const char* ip, uint16_t port)
+void connectHost(int sockfd)
 {
-  int sockfd = socket(AF_INET, SOCK_STREAM, 0);
-  if (sockfd < 0)
-    fatal("socket error");
   struct sockaddr_in servaddr;
   bzero(&servaddr, sizeof servaddr);
   servaddr.sin_family = AF_INET;
-  servaddr.sin_port = htons(port);
-  if (inet_pton(AF_INET, ip, &servaddr.sin_addr) <= 0)
+  servaddr.sin_port = htons(g_port);
+  if (inet_pton(AF_INET, g_host, &servaddr.sin_addr) <= 0)
     fatal("inet_pton error");
   if (connect(sockfd, (struct sockaddr*)&servaddr, sizeof servaddr) < 0)
-    fatal("connect error");
-  return sockfd;
+    perror("connect error");
 }
 
 vector<string> getline()
 {
-    char* line = NULL;
-    size_t dumy;
-    ssize_t len = getline(&line, &dumy, stdin);
+    char* line = ::readline("> ");
     vector<string> result;
-    if (len <= 0) {
+    if (line == NULL) {
       result.push_back("q");
     } else {
-      istringstream iss(string(line, len));
+      istringstream iss(line);
       istream_iterator<string> begin(iss);
       istream_iterator<string> end;
       copy(begin, end, back_inserter(result));
@@ -110,15 +106,18 @@ void run(int sockfd)
     vector<string> line = getline();
     if (line[0] == "q") {
       finish = true;
+      puts("");
     } else if (line[0] == "b") {
       setNonblock(sockfd, false);
     } else if (line[0] == "nb") {
       setNonblock(sockfd, true);
-    } else if (line[0] == "r") {
-      doRead(sockfd, line);
     } else if (line[0] == "c") {
       if (::close(sockfd) < 0)
         perror("close error");
+    } else if (line[0] == "rc") {
+      connectHost(sockfd);
+    } else if (line[0] == "r") {
+      doRead(sockfd, line);
     }
   }
 }
@@ -137,8 +136,14 @@ int main(int argc, char* argv[])
   int sockfd;
   if (serverMode)
     sockfd = acceptOne(2000);
-  else
-    sockfd = connectHost(argv[1], 2000);
+  else {
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0)
+      fatal("socket error");
+    g_host = argv[1];
+    g_port = 2000;
+    connectHost(sockfd);
+  }
 
   run(sockfd);
 }
