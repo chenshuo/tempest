@@ -99,6 +99,8 @@ void connectHost(int sockfd)
 
 vector<string> getline()
 {
+  static string lastline;
+  static vector<string> lastresult;
   char* line = ::readline("> ");
   vector<string> result;
   if (line == NULL) {
@@ -108,8 +110,16 @@ vector<string> getline()
     istream_iterator<string> begin(iss);
     istream_iterator<string> end;
     copy(begin, end, back_inserter(result));
+
+    if (lastline != line && !result.empty()) {
+      add_history(line);
+      lastline = line;
+      lastresult = result;
+    }
   }
   free(line);
+  if (result.empty())
+    result = lastresult;
   if (result.empty())
     result.push_back("");
   if (DEBUG) {
@@ -161,11 +171,13 @@ void doWrite(int sockfd, const vector<string>& line)
     printf("\n");
 }
 
-void doPoll(int sockfd, const vector<string>& line)
+void doPoll(int sockfd, const vector<string>& line, bool pollout)
 {
   struct pollfd pfd;
   pfd.fd = sockfd;
-  pfd.events = POLLIN | POLLPRI | POLLRDHUP | POLLOUT;
+  pfd.events = POLLIN | POLLPRI | POLLRDHUP;
+  if (pollout)
+    pfd.events |= POLLOUT;
   pfd.revents = 0;
   int timeout = 0;
   if (line.size() > 1) {
@@ -175,6 +187,21 @@ void doPoll(int sockfd, const vector<string>& line)
   int n = ::poll(&pfd, 1, timeout);
   if (n > 0) {
     printf("%d events\n", n);
+    if (pfd.revents & POLLIN)
+      printf("IN ");
+    if (pfd.revents & POLLPRI)
+      printf("PRI ");
+    if (pfd.revents & POLLOUT)
+      printf("OUT ");
+    if (pfd.revents & POLLHUP)
+      printf("HUP ");
+    if (pfd.revents & POLLRDHUP)
+      printf("RDHUP ");
+    if (pfd.revents & POLLERR)
+      printf("ERR ");
+    if (pfd.revents & POLLNVAL)
+      printf("NVAL ");
+    printf("\n");
   } else if (n == 0)
     printf("time out\n");
   else
@@ -213,8 +240,12 @@ void help()
       " w     - write 1 byte\n"
       " w N   - write N bytes\n"
       " w str - write string str\n"
-      " p     - poll\n"
-      " st    - status\n"
+      " p     - poll w/o POLLOUT\n"
+      " pw    - poll w/ POLLOUT\n"
+      " s     - status\n"
+      " st    - shutdown RDWR\n"
+      " str   - shutdown RD\n"
+      " stw   - shutdown WR\n"
       " b     - set blocking\n"
       " nb    - set non-blocking\n"
       " d     - set delay\n"
@@ -248,8 +279,10 @@ void run(int sockfd)
       doRead(sockfd, line);
     } else if (cmd == "w") {
       doWrite(sockfd, line);
+    } else if (cmd == "pw") {
+      doPoll(sockfd, line, true);
     } else if (cmd == "p") {
-      doPoll(sockfd, line);
+      doPoll(sockfd, line, false);
     }
   }
   puts("");
