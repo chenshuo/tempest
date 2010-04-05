@@ -8,9 +8,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <sys/types.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -208,6 +210,44 @@ void doPoll(int sockfd, const vector<string>& line, bool pollout)
     perror("poll error");
 }
 
+void doShutdown(int sockfd, int how)
+{
+  if (::shutdown(sockfd, how) < 0)
+    perror("shutdown error");
+}
+
+void printstatus(int sockfd, const char* name, int level, int optname)
+{
+  int optval;
+  socklen_t optlen = sizeof optval;
+
+  if (::getsockopt(sockfd, level, optname, &optval, &optlen) < 0)
+    perror("getsockopt error");
+  else
+    printf("%-12s %d\n", name, optval);
+}
+
+void doStatus(int sockfd)
+{
+  printstatus(sockfd, "SO_ERROR"     , SOL_SOCKET, SO_ERROR);
+  printstatus(sockfd, "SO_KEEPALIVE" , SOL_SOCKET, SO_KEEPALIVE);
+  printstatus(sockfd, "SO_RCVBUF"    , SOL_SOCKET, SO_RCVBUF);
+  printstatus(sockfd, "SO_SNDBUF"    , SOL_SOCKET, SO_SNDBUF);
+  printstatus(sockfd, "SO_RCVLOWAT"  , SOL_SOCKET, SO_RCVLOWAT);
+  printstatus(sockfd, "SO_SNDLOWAT"  , SOL_SOCKET, SO_SNDLOWAT);
+  printstatus(sockfd, "TCP_MAXSEG"   , IPPROTO_TCP, TCP_MAXSEG);
+  printstatus(sockfd, "TCP_NODELAY"  , IPPROTO_TCP, TCP_NODELAY);
+
+  int flags = ::fcntl(sockfd, F_GETFL, 0);
+  printf("%-12s %d\n", "O_NONBLOCK", (flags & O_NONBLOCK) ? 1 : 0);
+
+  int nread;
+  if (::ioctl(sockfd, FIONREAD, &nread) < 0)
+    perror("ioctl error");
+  else
+    printf("%-12s %d\n", "FIONREAD", nread);
+}
+
 void setNonblock(int sockfd, bool on)
 {
   int flags = ::fcntl(sockfd, F_GETFL, 0);
@@ -217,6 +257,13 @@ void setNonblock(int sockfd, bool on)
     flags &= ~O_NONBLOCK;
   if (::fcntl(sockfd, F_SETFL, flags) < 0)
     perror("fcntl error");
+}
+
+void setNodelay(int sockfd, bool on)
+{
+  int optval = on ? 1 : 0;
+  if (::setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &optval, sizeof optval) < 0)
+    perror("setsockopt error");
 }
 
 void setsignal(int sig, void (*func)(int))
@@ -235,21 +282,23 @@ void help()
       " ?     - help\n"
       " c     - close\n"
       " rc    - re-connect/re-accept\n"
-      " r     - read\n"
+      " r     - read 1024 bytes\n"
       " r N   - read N bytes\n"
       " w     - write 1 byte\n"
       " w N   - write N bytes\n"
       " w str - write string str\n"
       " p     - poll w/o POLLOUT\n"
       " pw    - poll w/ POLLOUT\n"
-      " s     - status\n"
-      " st    - shutdown RDWR\n"
+      " n     - show socket names\n"
+      " st    - status\n"
       " str   - shutdown RD\n"
       " stw   - shutdown WR\n"
+      " strw  - shutdown RDWR\n"
       " b     - set blocking\n"
       " nb    - set non-blocking\n"
       " d     - set delay\n"
       " nd    - set no-delay\n"
+      " ENTER - repeat last cmd\n"
       );
 }
 
@@ -267,6 +316,10 @@ void run(int sockfd)
       setNonblock(sockfd, false);
     } else if (cmd == "nb") {
       setNonblock(sockfd, true);
+    } else if (cmd == "d") {
+      setNodelay(sockfd, false);
+    } else if (cmd == "nd") {
+      setNodelay(sockfd, true);
     } else if (cmd == "c") {
       if (::close(sockfd) < 0)
         perror("close error");
@@ -283,6 +336,16 @@ void run(int sockfd)
       doPoll(sockfd, line, true);
     } else if (cmd == "p") {
       doPoll(sockfd, line, false);
+    } else if (cmd == "st") {
+      doStatus(sockfd);
+    } else if (cmd == "str") {
+      doShutdown(sockfd, SHUT_RD);
+    } else if (cmd == "stw") {
+      doShutdown(sockfd, SHUT_WR);
+    } else if (cmd == "strw") {
+      doShutdown(sockfd, SHUT_RDWR);
+    } else {
+      puts("unknown command - ? for help");
     }
   }
   puts("");
