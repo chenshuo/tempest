@@ -1,16 +1,13 @@
 CXXFLAGS=-O0 -ggdb
 CXXFLAGS+=-Wall -Wextra
-CXXFLAGS+=-lreadline
-HEADERS=$(wildcard *.h)
-BINARY=tempest
+LDFLAGS+=-lreadline
 
-all: $(BINARY)
+all: tempest
 
-$(BINARY): $(BINARY).cc $(HEADERS)
-	g++ $(CXXFLAGS) -o $@ $<
+tempest: tempest.cc
 
 clean:
-	rm $(BINARY)
+	rm tempest
 
 .PHONY: all clean
 
