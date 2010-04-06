@@ -133,7 +133,7 @@ vector<string> getline()
   return result;
 }
 
-void doRead(int sockfd, const vector<string>& line)
+void doRead(int sockfd, const vector<string>& line, bool print)
 {
   vector<char> buf;
   buf.resize(1024);
@@ -147,20 +147,22 @@ void doRead(int sockfd, const vector<string>& line)
   printf("read %zd bytes", n);
   if (n < 0)
     printf(", %d - %s\n", saved, strerror(saved));
+  else if (print)
+    printf(", %.*s\n", (int)buf.size(), &*buf.begin());
   else
     printf("\n");
 }
 
-void doWrite(int sockfd, const vector<string>& line)
+void doWrite(int sockfd, const vector<string>& line, bool str)
 {
   string buf = "H";
   if (line.size() > 1) {
     string arg = line[1];
-    if (isdigit(arg[0])) {
+    if (str) {
+      buf = arg;
+    } else {
       int len = atoi(arg.c_str());
       buf.assign(len, 'H');
-    } else {
-      buf = arg;
     }
   }
   printflush("writing %zu bytes ... ", buf.size());
@@ -214,6 +216,29 @@ void doShutdown(int sockfd, int how)
 {
   if (::shutdown(sockfd, how) < 0)
     perror("shutdown error");
+}
+
+void doShowName(int sockfd)
+{
+  char host[INET_ADDRSTRLEN];
+
+  struct sockaddr_in localaddr;
+  socklen_t addrlen = sizeof(localaddr);
+  if (::getsockname(sockfd, (struct sockaddr*)(&localaddr), &addrlen) < 0)
+    perror("getsockname error");
+  else {
+    inet_ntop(AF_INET, &localaddr.sin_addr, host, sizeof host);
+    printflush("local %s:%u  ", host, ntohs(localaddr.sin_port));
+  }
+
+  struct sockaddr_in remoteaddr;
+  addrlen = sizeof(remoteaddr);
+  if (::getpeername(sockfd, (struct sockaddr*)(&remoteaddr), &addrlen) < 0)
+    perror("getpeername error");
+  else {
+    inet_ntop(AF_INET, &remoteaddr.sin_addr, host, sizeof host);
+    printf("remote %s:%u\n", host, ntohs(remoteaddr.sin_port));
+  }
 }
 
 void printstatus(int sockfd, const char* name, int level, int optname)
@@ -284,9 +309,10 @@ void help()
       " rc    - re-connect/re-accept\n"
       " r     - read 1024 bytes\n"
       " r N   - read N bytes\n"
+      " rs N  - read N bytes and print\n"
       " w     - write 1 byte\n"
       " w N   - write N bytes\n"
-      " w str - write string str\n"
+      " ws x  - write string x\n"
       " p     - poll w/o POLLOUT\n"
       " pw    - poll w/ POLLOUT\n"
       " n     - show socket names\n"
@@ -329,13 +355,19 @@ void run(int sockfd)
       else
         connectHost(sockfd);
     } else if (cmd == "r") {
-      doRead(sockfd, line);
+      doRead(sockfd, line, false);
+    } else if (cmd == "rs") {
+      doRead(sockfd, line, true);
     } else if (cmd == "w") {
-      doWrite(sockfd, line);
+      doWrite(sockfd, line, false);
+    } else if (cmd == "ws") {
+      doWrite(sockfd, line, true);
     } else if (cmd == "pw") {
       doPoll(sockfd, line, true);
     } else if (cmd == "p") {
       doPoll(sockfd, line, false);
+    } else if (cmd == "n") {
+      doShowName(sockfd);
     } else if (cmd == "st") {
       doStatus(sockfd);
     } else if (cmd == "str") {
