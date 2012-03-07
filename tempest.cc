@@ -29,6 +29,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <netdb.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdarg.h>
@@ -39,6 +40,7 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -302,6 +304,36 @@ void doStatus(int sockfd)
     printf("%-12s %d\n", "FIONREAD", nread);
 }
 
+double gettime()
+{
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return tv.tv_sec + tv.tv_usec / 1000000.0;
+}
+
+void doResolve(const vector<string>& line)
+{
+  double start = gettime();
+  const char* host = line.size() > 1 ? line[1].c_str() : "www.chenshuo.com";
+  struct hostent* he = gethostbyname(host);
+  double end = gettime();
+  printf("resolve domain name %s took %f seconds\n", host, end-start);
+  if (he)
+  {
+    printf("h_name: %s\n", he->h_name);
+    for (char** alias = he->h_aliases; *alias != NULL; ++alias)
+    {
+      printf("alias: %s\n", *alias);
+    }
+    for (char** addr = he->h_addr_list; *addr != NULL; ++addr)
+    {
+      char buf[32] = "unknown";
+      inet_ntop(he->h_addrtype, *addr, buf, sizeof buf);
+      printf("addr: %s\n", buf);
+    }
+  }
+}
+
 void setNonblock(int sockfd, bool on)
 {
   int flags = ::fcntl(sockfd, F_GETFL, 0);
@@ -353,6 +385,7 @@ void help()
       " nb    - set non-blocking\n"
       " d     - set delay\n"
       " nd    - set no-delay\n"
+      " res d - resolve domain name\n"
       " ENTER - repeat last cmd\n"
       );
 }
@@ -405,6 +438,8 @@ void run(int sockfd)
       doShutdown(sockfd, SHUT_WR);
     } else if (cmd == "strw") {
       doShutdown(sockfd, SHUT_RDWR);
+    } else if (cmd == "res") {
+      doResolve(line);
     } else {
       puts("unknown command - ? for help");
     }
