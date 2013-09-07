@@ -280,7 +280,7 @@ void printstatus(int sockfd, const char* name, int level, int optname)
   if (::getsockopt(sockfd, level, optname, &optval, &optlen) < 0)
     perror("getsockopt error");
   else
-    printf("%-12s %d\n", name, optval);
+    printf("%-14s %d\n", name, optval);
 }
 
 void doStatus(int sockfd)
@@ -295,13 +295,50 @@ void doStatus(int sockfd)
   printstatus(sockfd, "TCP_NODELAY"  , IPPROTO_TCP, TCP_NODELAY);
 
   int flags = ::fcntl(sockfd, F_GETFL, 0);
-  printf("%-12s %d\n", "O_NONBLOCK", (flags & O_NONBLOCK) ? 1 : 0);
+  printf("%-14s %d\n", "O_NONBLOCK", (flags & O_NONBLOCK) ? 1 : 0);
 
   int nread;
   if (::ioctl(sockfd, FIONREAD, &nread) < 0)
     perror("ioctl error");
   else
-    printf("%-12s %d\n", "FIONREAD", nread);
+    printf("%-14s %d\n", "FIONREAD", nread);
+
+  struct tcp_info tcpi;
+  socklen_t len = sizeof(tcpi);
+  bzero(&tcpi, len);
+  if (getsockopt(sockfd, SOL_TCP, TCP_INFO, &tcpi, &len) == 0)
+  {
+#define PT(FIELD) printf("%-14s %d\n", #FIELD, tcpi.tcpi_##FIELD)
+    PT(state);
+    PT(ca_state);
+    PT(retransmits);
+    PT(probes);
+    PT(backoff);
+    PT(options);
+
+    PT(rto);
+    PT(ato);
+    PT(snd_mss);
+    PT(rcv_mss);
+
+    PT(unacked);
+    PT(sacked);
+    PT(lost);
+    PT(retrans);
+    PT(total_retrans);
+    PT(fackets);
+
+    PT(pmtu);
+    PT(rcv_ssthresh);
+    PT(rcv_rtt);
+    PT(rcv_space);
+    PT(rtt);
+    PT(rttvar);
+    PT(snd_ssthresh);
+    PT(snd_cwnd);
+    PT(advmss);
+    PT(reordering);
+  }
 }
 
 double gettime()

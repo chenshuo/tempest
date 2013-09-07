@@ -1,6 +1,6 @@
 CXXFLAGS=-O0 -ggdb
 CXXFLAGS+=-Wall -Wextra
-LDFLAGS+=-lreadline
+LDLIBS+=-lreadline
 
 all: tempest
 
