@@ -1,4 +1,4 @@
-// Tempest - A interactive learning tool for Sockets programming.
+// Tempest - An interactive learning tool for Sockets programming.
 // Copyright (c) 2010, Shuo Chen.  All rights reserved.
 // http://github.com/chenshuo/tempest
 //
@@ -43,7 +43,7 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <netinet/in.h>
-#include <netinet/tcp.h>
+#include <linux/tcp.h>
 #include <arpa/inet.h>
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -109,8 +109,12 @@ int acceptOne()
 {
   printflush("accepting ... ");
   int sockfd;
-  while ( (sockfd = accept(g_listenfd, NULL, NULL)) < 0)
+  while ( (sockfd = accept(g_listenfd, NULL, NULL)) < 0) {
     perror("accept error");
+    if (errno == EINTR) {
+      exit(1);
+    }
+  }
   printf("accepted\n");
   return sockfd;
 }
@@ -164,7 +168,7 @@ vector<string> getline()
   return result;
 }
 
-void doRead(int sockfd, const vector<string>& line, bool print)
+void doRead(int sockfd, const vector<string>& line, bool waitall)
 {
   vector<char> buf;
   buf.resize(1024);
@@ -172,14 +176,15 @@ void doRead(int sockfd, const vector<string>& line, bool print)
     int len = atoi(line[1].c_str());
     buf.resize(len);
   }
-  printflush("reading %zu buf ... ", buf.size());
-  ssize_t n = ::read(sockfd, &*buf.begin(), buf.size());
+  if (waitall)
+    printflush("reading %zu buf ... ", buf.size());
+  else
+    printflush("reading up to %zu ... ", buf.size());
+  ssize_t n = ::recv(sockfd, &*buf.begin(), buf.size(), waitall ? MSG_WAITALL : 0);
   int saved = errno;
   printf("read %zd bytes", n);
   if (n < 0)
     printf(", %d - %s\n", saved, strerror(saved));
-  else if (print)
-    printf(", %.*s\n", (int)buf.size(), &*buf.begin());
   else
     printf("\n");
 }
@@ -196,8 +201,8 @@ void doWrite(int sockfd, const vector<string>& line, bool str)
       buf.assign(len, 'H');
     }
   }
-  printflush("writing %zu bytes ... ", buf.size());
-  ssize_t n = ::write(sockfd, buf.c_str(), buf.size());
+  printflush("sending %zu bytes ... ", buf.size());
+  ssize_t n = ::send(sockfd, buf.c_str(), buf.size(), 0);
   int saved = errno;
   printf("wrote %zd bytes", n);
   if (n < 0)
@@ -283,19 +288,24 @@ void printstatus(int sockfd, const char* name, int level, int optname)
     printf("%-14s %d\n", name, optval);
 }
 
-void doStatus(int sockfd)
+void doStatus(int sockfd, bool detail)
 {
-  printstatus(sockfd, "SO_ERROR"     , SOL_SOCKET, SO_ERROR);
-  printstatus(sockfd, "SO_KEEPALIVE" , SOL_SOCKET, SO_KEEPALIVE);
+  if (detail) {
+    printstatus(sockfd, "SO_DEBUG"     , SOL_SOCKET, SO_DEBUG);
+    printstatus(sockfd, "SO_ERROR"     , SOL_SOCKET, SO_ERROR);
+    printstatus(sockfd, "SO_KEEPALIVE" , SOL_SOCKET, SO_KEEPALIVE);
+  }
   printstatus(sockfd, "SO_RCVBUF"    , SOL_SOCKET, SO_RCVBUF);
   printstatus(sockfd, "SO_SNDBUF"    , SOL_SOCKET, SO_SNDBUF);
-  printstatus(sockfd, "SO_RCVLOWAT"  , SOL_SOCKET, SO_RCVLOWAT);
-  printstatus(sockfd, "SO_SNDLOWAT"  , SOL_SOCKET, SO_SNDLOWAT);
-  printstatus(sockfd, "TCP_MAXSEG"   , IPPROTO_TCP, TCP_MAXSEG);
-  printstatus(sockfd, "TCP_NODELAY"  , IPPROTO_TCP, TCP_NODELAY);
+  if (detail) {
+    printstatus(sockfd, "SO_RCVLOWAT"  , SOL_SOCKET, SO_RCVLOWAT);
+    printstatus(sockfd, "SO_SNDLOWAT"  , SOL_SOCKET, SO_SNDLOWAT);
+    printstatus(sockfd, "TCP_MAXSEG"   , IPPROTO_TCP, TCP_MAXSEG);
+    printstatus(sockfd, "TCP_NODELAY"  , IPPROTO_TCP, TCP_NODELAY);
 
-  int flags = ::fcntl(sockfd, F_GETFL, 0);
-  printf("%-14s %d\n", "O_NONBLOCK", (flags & O_NONBLOCK) ? 1 : 0);
+    int flags = ::fcntl(sockfd, F_GETFL, 0);
+    printf("%-14s %d\n", "O_NONBLOCK", (flags & O_NONBLOCK) ? 1 : 0);
+  }
 
   int nread;
   if (::ioctl(sockfd, FIONREAD, &nread) < 0)
@@ -306,38 +316,100 @@ void doStatus(int sockfd)
   struct tcp_info tcpi;
   socklen_t len = sizeof(tcpi);
   bzero(&tcpi, len);
-  if (getsockopt(sockfd, SOL_TCP, TCP_INFO, &tcpi, &len) == 0)
+  // printf("len tcpi %d\n", len);
+  if (getsockopt(sockfd, IPPROTO_TCP, TCP_INFO, &tcpi, &len) == 0)
   {
 #define PT(FIELD) printf("%-14s %d\n", #FIELD, tcpi.tcpi_##FIELD)
-    PT(state);
-    PT(ca_state);
-    PT(retransmits);
-    PT(probes);
-    PT(backoff);
-    PT(options);
+#define PL(FIELD) printf("%-14s %lld\n", #FIELD, tcpi.tcpi_##FIELD)
+    if (detail) {
+      printf("\n");
+      PT(state);
+      PT(ca_state);
+      PT(retransmits);
+      PT(probes);
+      PT(backoff);
+      PT(options);
+      PT(snd_wscale);
+      PT(rcv_wscale);
+      PT(delivery_rate_app_limited);
+      PT(fastopen_client_fail);
+    }
 
+    printf("\n");
     PT(rto);
     PT(ato);
     PT(snd_mss);
     PT(rcv_mss);
 
-    PT(unacked);
-    PT(sacked);
-    PT(lost);
-    PT(retrans);
-    PT(total_retrans);
-    PT(fackets);
+    if (detail) {
+      printf("\n");
+      PT(unacked);
+      PT(sacked);
+      PT(lost);
+      PT(retrans);
+      PT(fackets);
 
+      printf("\n");
+      PT(last_data_sent);
+      PT(last_ack_sent);     /* Not remembered, sorry. */
+      PT(last_data_recv);
+      PT(last_ack_recv);
+    }
+
+    printf("\n");
     PT(pmtu);
     PT(rcv_ssthresh);
-    PT(rcv_rtt);
-    PT(rcv_space);
     PT(rtt);
     PT(rttvar);
     PT(snd_ssthresh);
     PT(snd_cwnd);
     PT(advmss);
     PT(reordering);
+
+    if (detail) {
+      PT(rcv_rtt);
+      PT(rcv_space);
+
+      PT(total_retrans);
+    }
+
+    printf("\n");
+    PL(pacing_rate);
+    PL(max_pacing_rate);
+    PL(bytes_acked);    /* RFC4898 tcpEStatsAppHCThruOctetsAcked */
+    PL(bytes_received); /* RFC4898 tcpEStatsAppHCThruOctetsReceived */
+    PT(segs_out);	/* RFC4898 tcpEStatsPerfSegsOut */
+    PT(segs_in);	/* RFC4898 tcpEStatsPerfSegsIn */
+
+    PT(notsent_bytes);
+    PT(min_rtt);
+    PT(data_segs_in);	/* RFC4898 tcpEStatsDataSegsIn */
+    PT(data_segs_out);	/* RFC4898 tcpEStatsDataSegsOut */
+
+    PL(delivery_rate);
+
+    printf("\n");
+    PL(busy_time);      /* Time (usec) busy sending data */
+    PL(rwnd_limited);   /* Time (usec) limited by receive window */
+    PL(sndbuf_limited); /* Time (usec) limited by send buffer */
+
+    PT(delivered);
+    if (detail) {
+      PT(delivered_ce);
+    }
+
+    PL(bytes_sent);     /* RFC4898 tcpEStatsPerfHCDataOctetsOut */
+    PL(bytes_retrans);  /* RFC4898 tcpEStatsPerfOctetsRetrans */
+    if (detail) {
+      PT(dsack_dups);     /* RFC4898 tcpEStatsStackDSACKDups */
+      PT(reord_seen);     /* reordering events seen */
+
+      PT(rcv_ooopack);    /* Out-of-order packets received */
+    }
+
+    PT(snd_wnd);	/* peer's advertised receive window after
+                         * scaling (bytes)
+                         */
   }
 }
 
@@ -389,6 +461,13 @@ void setNodelay(int sockfd, bool on)
     perror("setsockopt error");
 }
 
+void setDebug(int sockfd, bool on)
+{
+  int optval = on ? 1 : 0;
+  if (::setsockopt(sockfd, SOL_SOCKET, SO_DEBUG, &optval, sizeof optval) < 0)
+    perror("setsockopt error");
+}
+
 void setsignal(int sig, void (*func)(int))
 {
   struct sigaction act;
@@ -405,9 +484,9 @@ void help()
       " ?     - help\n"
       " c     - close\n"
       " rc    - re-connect/re-accept\n"
-      " r     - read 1024 bytes\n"
-      " r N   - read N bytes\n"
-      " rs N  - read N bytes and print\n"
+      " r     - read 1024 bytes or less\n"
+      " r N   - read N bytes or less\n"
+      " rn N  - read N bytes\n"
       " w     - write 1 byte\n"
       " w N   - write N bytes\n"
       " ws x  - write string x\n"
@@ -415,6 +494,7 @@ void help()
       " pw    - poll w/ POLLOUT\n"
       " n     - show socket names\n"
       " st    - status\n"
+      " sta   - status details\n"
       " str   - shutdown RD\n"
       " stw   - shutdown WR\n"
       " strw  - shutdown RDWR\n"
@@ -445,6 +525,10 @@ void run(int sockfd)
       setNodelay(sockfd, false);
     } else if (cmd == "nd") {
       setNodelay(sockfd, true);
+    } else if (cmd == "dbg") {
+      setDebug(sockfd, true);
+    } else if (cmd == "ndbg") {
+      setDebug(sockfd, false);
     } else if (cmd == "c") {
       if (::close(sockfd) < 0)
         perror("close error");
@@ -455,7 +539,7 @@ void run(int sockfd)
         connectHost(sockfd);
     } else if (cmd == "r") {
       doRead(sockfd, line, false);
-    } else if (cmd == "rs") {
+    } else if (cmd == "rn") {
       doRead(sockfd, line, true);
     } else if (cmd == "w") {
       doWrite(sockfd, line, false);
@@ -468,7 +552,9 @@ void run(int sockfd)
     } else if (cmd == "n") {
       doShowName(sockfd);
     } else if (cmd == "st") {
-      doStatus(sockfd);
+      doStatus(sockfd, false);
+    } else if (cmd == "sta") {
+      doStatus(sockfd, true);
     } else if (cmd == "str") {
       doShutdown(sockfd, SHUT_RD);
     } else if (cmd == "stw") {
