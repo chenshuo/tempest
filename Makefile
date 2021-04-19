@@ -1,6 +1,8 @@
-CXXFLAGS=-O0 -ggdb
+CXXFLAGS=-O0 -ggdb -std=c++11
 CXXFLAGS+=-Wall -Wextra
+CXXFLAGS+=-I/usr/local/include
 LDLIBS+=-lreadline
+LDFLAGS+=-L/usr/local/lib
 
 all: tempest
 

@@ -43,7 +43,11 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <netinet/in.h>
+#ifdef __linux
 #include <linux/tcp.h>
+#else
+#include <netinet/tcp.h>
+#endif
 #include <arpa/inet.h>
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -215,7 +219,10 @@ void doPoll(int sockfd, const vector<string>& line, bool pollout)
 {
   struct pollfd pfd;
   pfd.fd = sockfd;
-  pfd.events = POLLIN | POLLPRI | POLLRDHUP;
+  pfd.events = POLLIN | POLLPRI;
+#ifdef POLLRDHUP
+  pfd.events |= POLLRDHUP;
+#endif
   if (pollout)
     pfd.events |= POLLOUT;
   pfd.revents = 0;
@@ -235,8 +242,10 @@ void doPoll(int sockfd, const vector<string>& line, bool pollout)
       printf("OUT ");
     if (pfd.revents & POLLHUP)
       printf("HUP ");
+#ifdef POLLRDHUP
     if (pfd.revents & POLLRDHUP)
       printf("RDHUP ");
+#endif
     if (pfd.revents & POLLERR)
       printf("ERR ");
     if (pfd.revents & POLLNVAL)
@@ -319,60 +328,70 @@ void doStatus(int sockfd, bool detail)
   // printf("len tcpi %d\n", len);
   if (getsockopt(sockfd, IPPROTO_TCP, TCP_INFO, &tcpi, &len) == 0)
   {
-#define PT(FIELD) printf("%-14s %d\n", #FIELD, tcpi.tcpi_##FIELD)
-#define PL(FIELD) printf("%-14s %lld\n", #FIELD, tcpi.tcpi_##FIELD)
+#define PT(FIELD) printf("%-14s %u\n", #FIELD, tcpi.tcpi_##FIELD)
+#ifdef __linux
+#define PU(FIELD) printf("%-14s %u\n", #FIELD, tcpi.tcpi_##FIELD)
+#else
+#define PU(FIELD) printf("%-14s %u\n", #FIELD, tcpi.__tcpi_##FIELD)
+#endif
+#define PL(FIELD) printf("%-14s %llu\n", #FIELD, tcpi.tcpi_##FIELD)
     if (detail) {
       printf("\n");
       PT(state);
-      PT(ca_state);
-      PT(retransmits);
-      PT(probes);
-      PT(backoff);
+      PU(ca_state);
+      PU(retransmits);
+      PU(probes);
+      PU(backoff);
       PT(options);
       PT(snd_wscale);
       PT(rcv_wscale);
+#ifdef __linux
       PT(delivery_rate_app_limited);
       PT(fastopen_client_fail);
+#endif
     }
 
     printf("\n");
     PT(rto);
-    PT(ato);
+    PU(ato);
     PT(snd_mss);
     PT(rcv_mss);
 
     if (detail) {
       printf("\n");
-      PT(unacked);
-      PT(sacked);
-      PT(lost);
-      PT(retrans);
-      PT(fackets);
+      PU(unacked);
+      PU(sacked);
+      PU(lost);
+      PU(retrans);
+      PU(fackets);
 
       printf("\n");
-      PT(last_data_sent);
-      PT(last_ack_sent);     /* Not remembered, sorry. */
+      PU(last_data_sent);
+      PU(last_ack_sent);     /* Not remembered, sorry. */
       PT(last_data_recv);
-      PT(last_ack_recv);
+      PU(last_ack_recv);
     }
 
     printf("\n");
-    PT(pmtu);
-    PT(rcv_ssthresh);
+    PU(pmtu);
+    PU(rcv_ssthresh);
     PT(rtt);
     PT(rttvar);
     PT(snd_ssthresh);
     PT(snd_cwnd);
-    PT(advmss);
-    PT(reordering);
+    PU(advmss);
+    PU(reordering);
 
     if (detail) {
-      PT(rcv_rtt);
+      PU(rcv_rtt);
       PT(rcv_space);
 
+#ifdef __linux
       PT(total_retrans);
+#endif
     }
 
+#ifdef __linux
     printf("\n");
     PL(pacing_rate);
     PL(max_pacing_rate);
@@ -410,6 +429,16 @@ void doStatus(int sockfd, bool detail)
     PT(snd_wnd);	/* peer's advertised receive window after
                          * scaling (bytes)
                          */
+#elif __FreeBSD__
+    PT(snd_wnd);		/* Advertised send window. */
+    PT(snd_bwnd);		/* No longer used. */
+    PT(snd_nxt);		/* Next egress seqno */
+    PT(rcv_nxt);		/* Next ingress seqno */
+    PT(toe_tid);		/* HWTID for TOE endpoints */
+    PT(snd_rexmitpack);		/* Retransmitted packets */
+    PT(rcv_ooopack);		/* Out-of-order packets */
+    PT(snd_zerowin);		/* Zero-sized windows sent */
+#endif
   }
 }
 
