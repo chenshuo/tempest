@@ -123,8 +123,11 @@ int acceptOne()
   return sockfd;
 }
 
-void connectHost(int sockfd)
+int connectHost()
 {
+  int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+  if (sockfd < 0)
+    fatal("socket error");
   struct sockaddr_in servaddr;
   bzero(&servaddr, sizeof servaddr);
   servaddr.sin_family = AF_INET;
@@ -136,6 +139,7 @@ void connectHost(int sockfd)
     perror("connect error");
   else
     printf("connected\n");
+  return sockfd;
 }
 
 vector<string> getline()
@@ -565,7 +569,7 @@ void run(int sockfd)
       if (g_serverMode)
         sockfd = acceptOne();
       else
-        connectHost(sockfd);
+        sockfd = connectHost();
     } else if (cmd == "r") {
       doRead(sockfd, line, false);
     } else if (cmd == "rn") {
@@ -607,22 +611,22 @@ int main(int argc, char* argv[])
   if (argc > 1)
     g_serverMode = (strcmp(argv[1], "-s") == 0);
   else {
-    printf("Usage: %s [-s] [host_ip]\n", argv[0]);
+    printf("Usage: %s [-s | host_ip] [port]\n", argv[0]);
     return 0;
   }
 
   printf("pid = %d\n", getpid());
+
+  if (argc > 2)
+    g_port = atoi(argv[2]);
 
   int sockfd;
   if (g_serverMode) {
     initServer(g_port);
     sockfd = acceptOne();
   } else {
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0)
-      fatal("socket error");
     g_host = argv[1];
-    connectHost(sockfd);
+    sockfd = connectHost();
   }
 
   run(sockfd);
