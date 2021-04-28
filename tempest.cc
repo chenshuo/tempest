@@ -44,6 +44,7 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 #ifdef __linux
+#include <linux/sock_diag.h>
 #include <linux/tcp.h>
 #else
 #include <netinet/tcp.h>
@@ -111,7 +112,7 @@ void initServer(uint16_t port)
 
 int acceptOne()
 {
-  printflush("accepting ... ");
+  printflush("accepting on port %d ... ", g_port);
   int sockfd;
   while ( (sockfd = accept(g_listenfd, NULL, NULL)) < 0) {
     perror("accept error");
@@ -318,6 +319,24 @@ void doStatus(int sockfd, bool detail)
 
     int flags = ::fcntl(sockfd, F_GETFL, 0);
     printf("%-14s %d\n", "O_NONBLOCK", (flags & O_NONBLOCK) ? 1 : 0);
+
+#ifdef SO_MEMINFO
+    uint32_t meminfo[SK_MEMINFO_VARS];
+    socklen_t optlen = sizeof meminfo;
+    if (::getsockopt(sockfd, SOL_SOCKET, SO_MEMINFO, meminfo, &optlen) == 0) {
+      void* limit = (char*)meminfo + optlen;
+#define PM(FIELD) if (meminfo + SK_MEMINFO_##FIELD < limit) \
+      printf("%-14s %u\n", "SK_" #FIELD, meminfo[SK_MEMINFO_##FIELD])
+      PM(RMEM_ALLOC);
+      PM(WMEM_ALLOC);
+      PM(FWD_ALLOC);
+      PM(WMEM_QUEUED);
+      PM(OPTMEM);
+      PM(BACKLOG);
+      PM(DROPS);
+#undef PM
+    }
+#endif
   }
 
   int nread;
