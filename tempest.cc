@@ -198,18 +198,8 @@ void doRead(int sockfd, const vector<string>& line, bool waitall)
     printf("\n");
 }
 
-void doWrite(int sockfd, const vector<string>& line, bool str)
+void Send(int sockfd, const string& buf)
 {
-  string buf = "H";
-  if (line.size() > 1) {
-    string arg = line[1];
-    if (str) {
-      buf = arg;
-    } else {
-      int len = atoi(arg.c_str());
-      buf.assign(len, 'H');
-    }
-  }
   printflush("sending %zu bytes ... ", buf.size());
   ssize_t n = ::send(sockfd, buf.c_str(), buf.size(), 0);
   int saved = errno;
@@ -218,6 +208,26 @@ void doWrite(int sockfd, const vector<string>& line, bool str)
     printf(", %d - %s\n", saved, strerror(saved));
   else
     printf("\n");
+}
+
+void doWrite(int sockfd, const vector<string>& line, bool str)
+{
+  string buf = "S";
+  if (line.size() > 1) {
+    string arg = line[1];
+    if (str) {
+      buf = arg;
+    } else {
+      int len = atoi(arg.c_str());
+      buf.assign(len, 'S');
+    }
+  }
+  Send(sockfd, buf);
+  if (line.size() > 2) {
+    int len = atoi(line[2].c_str());
+    buf.assign(len, 'C');
+    Send(sockfd, buf);
+  }
 }
 
 void doPoll(int sockfd, const vector<string>& line, bool pollout)
