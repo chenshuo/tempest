@@ -312,6 +312,49 @@ void printstatus(int sockfd, const char* name, int level, int optname)
     printf("%-14s %d\n", name, optval);
 }
 
+void doSenderStatus(int sockfd)
+{
+  int sndbuf = 0;
+  socklen_t optlen = sizeof sndbuf;
+
+  if (::getsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, &sndbuf, &optlen) < 0)
+    perror("getsockopt SO_SNDBUF error");
+
+  struct tcp_info tcpi;
+  socklen_t len = sizeof(tcpi);
+  bzero(&tcpi, len);
+  if (getsockopt(sockfd, IPPROTO_TCP, TCP_INFO, &tcpi, &len) < 0)
+    perror("getsockopt TCP_INFO error");
+
+  int cwnd = tcpi.tcpi_snd_cwnd;
+  int ssthresh = tcpi.tcpi_snd_ssthresh;
+#ifdef __linux
+  // Linux's cwnd is # of mss.
+  cwnd *= tcpi.tcpi_snd_mss;
+
+  if (tcpi.tcpi_snd_ssthresh < INT32_MAX)
+  {
+    ssthresh *= tcpi.tcpi_snd_mss;
+  }
+  else
+  {
+    ssthresh = -1;
+  }
+#endif
+
+  printf("smss %d, ", tcpi.tcpi_snd_mss);
+  printf("sndbuf %d, ", sndbuf);
+  printf("cwnd %d, ssthresh %d, ", cwnd, ssthresh);
+  printf("rwnd %d\n", tcpi.tcpi_snd_wnd);
+
+  printf("rto %.1fms, rtt/var %.3fms/%.3fms, min_rtt %.3fms\n",
+         tcpi.tcpi_rto / 1e3,
+         tcpi.tcpi_rtt / 1e3,
+         tcpi.tcpi_rttvar / 1e3,
+         tcpi.tcpi_min_rtt / 1e3);
+  // TODO: pacing_rate?
+}
+
 void doStatus(int sockfd, bool detail)
 {
   if (detail) {
@@ -613,6 +656,8 @@ void run(int sockfd)
       doPoll(sockfd, line, false);
     } else if (cmd == "n") {
       doShowName(sockfd);
+    } else if (cmd == "s") {
+      doSenderStatus(sockfd);
     } else if (cmd == "st") {
       doStatus(sockfd, false);
     } else if (cmd == "sta") {
@@ -658,6 +703,7 @@ int main(int argc, char* argv[])
     sockfd = connectHost();
   }
 
+  doSenderStatus(sockfd);
   run(sockfd);
 }
 
