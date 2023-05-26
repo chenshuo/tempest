@@ -495,6 +495,9 @@ void doStatus(int sockfd, bool detail)
 
     PL(bytes_sent);     /* RFC4898 tcpEStatsPerfHCDataOctetsOut */
     PL(bytes_retrans);  /* RFC4898 tcpEStatsPerfOctetsRetrans */
+    int bytes_in_flight = tcpi.tcpi_bytes_sent - tcpi.tcpi_bytes_acked - tcpi.tcpi_bytes_retrans + 1;  // SYN
+    printf("%-14s %d\n", "bytes_in_flight", bytes_in_flight);
+
     if (detail) {
       PT(dsack_dups);     /* RFC4898 tcpEStatsStackDSACKDups */
       PT(reord_seen);     /* reordering events seen */
