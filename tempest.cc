@@ -347,11 +347,14 @@ void doSenderStatus(int sockfd)
   printf("cwnd %d, ssthresh %d, ", cwnd, ssthresh);
   printf("rwnd %d\n", tcpi.tcpi_snd_wnd);
 
-  printf("rto %.1fms, rtt/var %.3fms/%.3fms, min_rtt %.3fms\n",
+  printf("rto %.1fms, rtt/var %.3fms/%.3fms",
          tcpi.tcpi_rto / 1e3,
          tcpi.tcpi_rtt / 1e3,
-         tcpi.tcpi_rttvar / 1e3,
-         tcpi.tcpi_min_rtt / 1e3);
+         tcpi.tcpi_rttvar / 1e3);
+#ifdef __linux
+  printf(", min_rtt %.3fms", tcpi.tcpi_min_rtt / 1e3);
+#endif
+  printf("\n");
   // TODO: pacing_rate?
 }
 
